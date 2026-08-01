@@ -7,8 +7,8 @@
 - **自动化检测**：
   - 新增数据库状态创建检测机制。
   - 支持本地词典脚本自动检测（当 `.py` 脚本与 `.mdx` 文件同名且处于同一目录时自动识别）。
-    <img width="266" height="326" alt="image" src="https://github.com/user-attachments/assets/6e016b23-c0d2-4fb3-b3ac-db37ad87ccad" />  
-    检测到脚本时，会识别对应路径和文件名，右侧会出现'√'，并自动填入词典地址
+  <img width="266" height="326" alt="image" src="https://github.com/user-attachments/assets/6e016b23-c0d2-4fb3-b3ac-db37ad87ccad" />  
+  检测到同名脚本时，会识别对应路径和文件名，右侧会出现'√'，并自动填入词典地址
 - **UI 与交互优化**：
   - 优化本地文件夹面板的显示，可清晰查看所有被检测到的 `.mdx` 文件。
   - 修复了当存在多个本地词典脚本时，仅第一个词典能够显示默认选项的 Bug。
