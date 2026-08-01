@@ -1,4 +1,4 @@
-<img width="197" height="446" alt="image" src="https://github.com/user-attachments/assets/6678c91d-9a24-4c75-8331-24707b3aaa31" />#  更新内容 
+#  更新内容 
 
 - **日志系统**：新增完整的日志记录功能，方便追踪查询异常与排查 Bug。（日志文件位于插件根目录）
     <img width="857" height="287" alt="image" src="https://github.com/user-attachments/assets/81124210-e697-42f1-9a28-4314ba480160" />
