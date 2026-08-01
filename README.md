@@ -1,39 +1,14 @@
-# [dev] FastWordQuery_
-**没改完，慢慢来**
+#  更新内容 (What's New)
 
-适配pyqt6
-
-适配anki新api
-
-修改失效词典
-
-修复css文件不能载入的问题（暂时有效）（  [问题来源](https://github.com/ankitects/anki/blob/main/ts/editor/plain-text-input/remove-prohibited.ts#L14) & [解释](https://forums.ankiweb.net/t/how-to-add-external-css-in-a-field/17838/9) ）
-## 使用
-- **自动：** 使用安装码 **103636257** （有时没有下面的方法更新及时）
-
-或者
-
-- **手动：** 复制src文件夹到插件文件夹即可，也可将其重命名为fastwq，啥都行。
-
-
-
-# ENG
-
-
-Adapt to pyqt6
-
-Adapt to anki new api
-
-Modify invalid dictionary
-
-Fix the problem that the css file cannot be loaded (temporarily valid) ([problem source](https://github.com/ankitects/anki/blob/main/ts/editor/plain-text-input/remove-prohibited.ts#L14) & [Explanation](https://forums.ankiweb.net/t/how-to-add-external-css-in-a-field/17838/9) )
-## Use
-- **Automatic:** Use the installation code **103636257**
-
-or
-  
-- **Manual:**  Copy the src folder to the plugin folder, or rename it to fastwq, whatever.
-
+- **日志系统**：新增完整的日志记录功能，方便追踪查询异常与排查 Bug。
+- **多媒体支持**：增强对多个 `.mdd` 文件的支持，完善本地词典的音频/图片加载。
+- **自动化检测**：
+  - 新增数据库状态创建检测机制。
+  - 支持本地词典脚本自动检测（当 `.py` 脚本与 `.mdx` 文件同名且处于同一目录时自动识别）。
+- **UI 与交互优化**：
+  - 优化本地文件夹面板的显示，可清晰查看所有被检测到的 `.mdx` 文件。
+  - 修复了当存在多个本地词典脚本时，仅第一个词典能够显示默认选项的 Bug。
+- **现代库适配**：移除过时的 PyQt5 代码，全面适配现代 Anki 环境。
 
 # -------------------
 
