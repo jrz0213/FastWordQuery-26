@@ -1,14 +1,18 @@
-#  更新内容 
+<img width="197" height="446" alt="image" src="https://github.com/user-attachments/assets/6678c91d-9a24-4c75-8331-24707b3aaa31" />#  更新内容 
 
 - **日志系统**：新增完整的日志记录功能，方便追踪查询异常与排查 Bug。（日志文件位于插件根目录）
     <img width="857" height="287" alt="image" src="https://github.com/user-attachments/assets/81124210-e697-42f1-9a28-4314ba480160" />
-  
-- **多媒体支持**：增强对多个 `.mdd` 文件的支持，完善本地词典的音频/图片加载，如牛津9和牛津10词典，原版无法导入单词和例句发音问题。
+    <img width="157" height="338" alt="image" src="https://github.com/user-attachments/assets/f239c1f8-e3e4-4e4e-94be-a208dfab3d00" />
+
+
 - **自动化检测**：
   - 新增数据库状态创建检测机制。
   - 支持本地词典脚本自动检测（当 `.py` 脚本与 `.mdx` 文件同名且处于同一目录时自动识别）。
-  <img width="266" height="326" alt="image" src="https://github.com/user-attachments/assets/6e016b23-c0d2-4fb3-b3ac-db37ad87ccad" />  
-  检测到同名脚本时，会识别对应路径和文件名，右侧会出现'√'，并自动填入词典地址
+    检测到同名脚本时，会识别对应路径和文件名，右侧会出现'√'，并自动填入词典地址
+  <img width="266" height="326" alt="image" src="https://github.com/user-attachments/assets/6e016b23-c0d2-4fb3-b3ac-db37ad87ccad" />
+  <img width="197" height="446" alt="image" src="https://github.com/user-attachments/assets/600c58ce-28e9-4f09-81ac-49c65ba4b103" />
+- **多媒体支持**：增强对多个 `.mdd` 文件的支持，完善本地词典的音频/图片加载，解决牛津9和牛津10词典无法导入单词和例句发音问题。（上图橙色）
+ 
 - **UI 与交互优化**：
   - 优化本地文件夹面板的显示，可清晰查看所有被检测到的 `.mdx` 文件。
   - 修复了当存在多个本地词典脚本时，仅第一个词典能够显示默认选项的 Bug。
