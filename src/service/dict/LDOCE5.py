@@ -6,6 +6,12 @@ from ..base import *
 # from BeautifulSoup import BeautifulSoup
 # from bs4 import BeautifulSoup
 
+'''
+我用夸克网盘给你分享了「LDOCE 5++ V2.15」，点击链接或复制整段内容，打开「夸克网盘APP」即可获取。
+/~a5033Zua7B~:/
+链接：https://pan.quark.cn/s/a00e5c39a9ee?pwd=SuBY
+提取码：SuBY
+'''
 
 VOICE_PATTERN = r'href="sound:\/\/([\w\/]+%s\/\w*\.mp3)"'
 VOICE_PATTERN_WQ = r'<span class="%s"><a href="sound://([\w/]+\w*\.mp3)">(.*?)</span %s>'

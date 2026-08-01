@@ -34,9 +34,8 @@ from ..lang import _
 from ..gui import ProgressWindow
 from ..service import service_manager, service_pool, QueryResult, copy_static_file
 from ..service.base import LocalService
-from ..utils import Empty, MapDict, Queue, wrap_css
-
-
+from ..utils import MapDict, wrap_css
+from queue import Queue, Empty
 __all__ = ['query_from_browser', 'query_from_editor_fields']
 
 

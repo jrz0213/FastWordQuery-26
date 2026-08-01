@@ -1,21 +1,4 @@
-# -*- coding:utf-8 -*-
-#
-# Copyright (C) 2018 sthoo <sth201807@gmail.com>
-#
-# Support: Report an issue at https://github.com/sth2018/FastWordQuery/issues
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# any later version; http://www.gnu.org/copyleft/gpl.html.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
 
 import io
 import os
@@ -34,6 +17,8 @@ from ..service import QueryResult, copy_static_file, service_pool
 from ..service.base import LocalService
 from ..utils import wrap_css
 from ..lang import _
+# 引入全局日志对象
+from ..utils.logger import logger
 
 __all__ = [
     'InvalidWordException', 'update_note_fields', 'update_note_field',
@@ -129,7 +114,8 @@ def promot_choose_css(missed_css):
             try:
                 filepath = css['dict_path'][:css['dict_path'].rindex(os.path.
                                                                      sep) + 1]
-                filepath = QFileDialog.getOpenFileName(
+                # 修复 Qt6 返回元组的 Bug，使用 _, 忽略第二个返回值
+                filepath, _ = QFileDialog.getOpenFileName(
                     directory=filepath,
                     caption=u'Choose css file',
                     filter=u'CSS (*.css)')
@@ -241,7 +227,8 @@ def query_flds(note, fileds=None):
                 result.update({task['i']: qr})
                 success_num += 1
         except Exception as e:
-            print(_("NO_QUERY_WORD"), e)
+            # 修复：移除 print，改用 logger 静默记录，防止干扰或无日志
+            logger.error(f"查词发生异常: {str(e)}")
             pass
 
     missed_css = list()

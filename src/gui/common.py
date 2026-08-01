@@ -17,8 +17,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import types
-
 from aqt import mw
 from aqt.qt import *
 
@@ -72,7 +70,7 @@ def show_options(browser=None, model_id=-1, callback=None, *args, **kwargs):
     result = opt_dialog.exec()
     opt_dialog.destroy()
     if result == QDialog.DialogCode.Accepted:
-        if isinstance(callback, types.FunctionType):
+        if callable(callback):
             callback(*args, **kwargs)
     elif result == 1001:
         show_fm_dialog(parent)

@@ -1,21 +1,4 @@
-# -*- coding:utf-8 -*-
-#
-# Copyright (C) 2018 sthoo <sth201807@gmail.com>
-#
-# Support: Report an issue at https://github.com/sth2018/FastWordQuery/issues
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# any later version; http://www.gnu.org/copyleft/gpl.html.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
 
 from aqt.qt import *
 
@@ -40,68 +23,90 @@ class SettingDialog(Dialog):
         self.build()
 
     def build(self):
-        layout = QVBoxLayout()
+        # 1. 创建最外层的主布局 (负责把 滚动区 和 底部按钮 上下分开)
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(10, 10, 10, 10) # 可选：设置边缘留白
 
+        # 2. 创建滚动区域
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True) # 【关键】让内部的 Widget 自动拉伸适应宽度
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame) # 去掉滚动区域自带的边框，看起来更融洽
+
+        # 3. 创建一个用来装所有设置项的“内容容器 (Widget)”
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+
+        # ============ 下面开始往 content_layout 里塞你的控件 ============
         check_force_update = QCheckBox(_("FORCE_UPDATE"))
         check_force_update.setChecked(config.force_update)
-        layout.addWidget(check_force_update)
-        layout.addSpacing(10)
+        content_layout.addWidget(check_force_update)
+        content_layout.addSpacing(10)
 
         check_ignore_accents = QCheckBox(_("IGNORE_ACCENTS"))
         check_ignore_accents.setChecked(config.ignore_accents)
-        layout.addWidget(check_ignore_accents)
-        layout.addSpacing(10)
+        content_layout.addWidget(check_ignore_accents)
+        content_layout.addSpacing(10)
 
         check_ighore_mdx_wordcase = QCheckBox(_("IGNORE_MDX_WORDCASE"))
         check_ighore_mdx_wordcase.setChecked(config.ignore_mdx_wordcase)
-        layout.addWidget(check_ighore_mdx_wordcase)
-        layout.addSpacing(10)
+        content_layout.addWidget(check_ighore_mdx_wordcase)
+        content_layout.addSpacing(10)
 
-        hbox = QHBoxLayout()
+        hbox_thread = QHBoxLayout()
         input_thread_number = QSpinBox(parent=self)
         input_thread_number.setRange(1, 120)
         input_thread_number.setValue(config.thread_number)
-        input_label = QLabel(_("THREAD_NUMBER") + ":", parent=self)
-        hbox.addWidget(input_label)
-        hbox.setStretchFactor(input_label, 1)
-        hbox.addWidget(input_thread_number)
-        hbox.setStretchFactor(input_thread_number, 2)
-        layout.addLayout(hbox)
+        input_label_thread = QLabel(_("THREAD_NUMBER") + ":", parent=self)
+        hbox_thread.addWidget(input_label_thread)
+        hbox_thread.setStretchFactor(input_label_thread, 1)
+        hbox_thread.addWidget(input_thread_number)
+        hbox_thread.setStretchFactor(input_thread_number, 2)
+        content_layout.addLayout(hbox_thread)
 
-        hbox = QHBoxLayout()
+        hbox_cloze = QHBoxLayout()
         input_cloze_str = QLineEdit()
         input_cloze_str.setText(config.cloze_str)
-        input_label = QLabel(_("CLOZE_WORD_FORMAT") + ":", parent=self)
-        hbox.addWidget(input_label)
-        hbox.setStretchFactor(input_label, 1)
-        hbox.addWidget(input_cloze_str)
-        hbox.setStretchFactor(input_cloze_str, 2)
-        layout.addLayout(hbox)
+        input_label_cloze = QLabel(_("CLOZE_WORD_FORMAT") + ":", parent=self)
+        hbox_cloze.addWidget(input_label_cloze)
+        hbox_cloze.setStretchFactor(input_label_cloze, 1)
+        hbox_cloze.addWidget(input_cloze_str)
+        hbox_cloze.setStretchFactor(input_cloze_str, 2)
+        content_layout.addLayout(hbox_cloze)
 
-        hbox = QHBoxLayout()
+        hbox_sound = QHBoxLayout()
         input_sound_str = QLineEdit()
         input_sound_str.setText(config.sound_str)
-        input_label = QLabel(_("SOUND_FORMAT") + ":", parent=self)
-        hbox.addWidget(input_label)
-        hbox.setStretchFactor(input_label, 1)
-        hbox.addWidget(input_sound_str)
-        hbox.setStretchFactor(input_sound_str, 2)
-        layout.addLayout(hbox)
+        input_label_sound = QLabel(_("SOUND_FORMAT") + ":", parent=self)
+        hbox_sound.addWidget(input_label_sound)
+        hbox_sound.setStretchFactor(input_label_sound, 1)
+        hbox_sound.addWidget(input_sound_str)
+        hbox_sound.setStretchFactor(input_sound_str, 2)
+        content_layout.addLayout(hbox_sound)
 
-        hbox = QHBoxLayout()
+        content_layout.addStretch(1) 
+
+
+        scroll_area.setWidget(content_widget)
+
+
+        main_layout.addWidget(scroll_area)
+
+
+        hbox_btns = QHBoxLayout()
         okbtn = QDialogButtonBox(parent=self)
         okbtn.setStandardButtons(QDialogButtonBox.StandardButton.Ok)
         okbtn.clicked.connect(self.accept)
         resetbtn = QDialogButtonBox(parent=self)
         resetbtn.setStandardButtons(QDialogButtonBox.StandardButton.Reset)
         resetbtn.clicked.connect(self.reset)
-        hbox.setAlignment(Qt.AlignmentFlag.AlignRight)
-        hbox.addSpacing(300)
-        hbox.addWidget(resetbtn)
-        hbox.addWidget(okbtn)
+        
+        hbox_btns.addStretch(1) 
+        hbox_btns.addWidget(resetbtn)
+        hbox_btns.addWidget(okbtn)
 
-        layout.addSpacing(48)
-        layout.addLayout(hbox)
+
+        main_layout.addSpacing(10)
+        main_layout.addLayout(hbox_btns)
 
         self.check_force_update = check_force_update
         self.check_ignore_accents = check_ignore_accents
@@ -110,8 +115,7 @@ class SettingDialog(Dialog):
         self.input_cloze_str = input_cloze_str
         self.input_sound_str = input_sound_str
 
-        layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.setLayout(layout)
+        self.setLayout(main_layout)
 
     def accept(self):
         self.save()

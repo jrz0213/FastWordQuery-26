@@ -1,6 +1,7 @@
 #-*- coding:utf-8 -*-
 import re
 import os
+from .logger import logger
 
 __all__ = ['add_metaclass', 'wrap_css']
 
@@ -38,17 +39,18 @@ def wrap_css(orig_css, is_file=True, class_wrapper=None, new_cssfile_suffix=u'wr
         new_cssfile = u'{css_name}_{suffix}.css'.format(
             css_name=orig_css[:orig_css.rindex('.css')],
             suffix=new_cssfile_suffix)
+        
         # if new css file exists, not process
-        # if input original css file doesn't exist, return the new css filename and class wrapper
-        # to make the subsequent process easy.
         if os.path.exists(new_cssfile) or not os.path.exists(orig_css):
             return new_cssfile, class_wrapper
+            
         result = ''
         with open(orig_css, 'rb') as f:
             try:
                 result = process(f.read().strip().decode('utf-8', 'ignore'))
-            except:
-                showInfo('error: ' + orig_css)
+            except Exception as e:
+                # 修复：使用 logger 替代旧版未引入的 showInfo
+                logger.error(f"解析或包装 CSS 失败: [{orig_css}] | 错误信息: {str(e)}")
 
         if result:
             with open(new_cssfile, 'wb') as f:

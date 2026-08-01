@@ -168,7 +168,7 @@ class EnglishStemmer(BaseStemmer):
         self.B_Y_found = other.B_Y_found
         self.I_p2 = other.I_p2
         self.I_p1 = other.I_p1
-        super.copy_from(other)
+        super().copy_from(other)
     
 
     def r_prelude(self):

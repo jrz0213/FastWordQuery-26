@@ -19,14 +19,15 @@
 import anki.notes
 from aqt import mw
 from aqt.qt import *
-from aqt.utils import showInfo
 from anki.notes import Note
 
 from ..context import config
 from ..lang import _
 from ..gui import ProgressWindow
-from ..utils import Empty, MapDict, Queue
 
+from ..utils.logger import logger
+from ..utils import MapDict, wrap_css
+from queue import Queue, Empty
 from .common import InvalidWordException, query_flds, update_note_fields
 
 
@@ -64,10 +65,10 @@ class QueryThread(QThread):
                     if self.manager.update(note, results, success_num, missed_css):
                         self.note_flush.emit(note)
             except InvalidWordException:
-                # only show error info on single query
                 self.manager.fails += 1
                 if self.manager.total == 1:
-                    showInfo(_("NO_QUERY_WORD"))
+                    # 【修复】禁止在 QThread 后台线程中调用 GUI 弹窗（会引起 Qt6 闪退），改用日志记录
+                    logger.warning("查询失败，存在无效单词或未找到。")
 
             if self.manager:
                 self.manager.queue.task_done()

@@ -4,26 +4,19 @@ import json
 import os
 import re
 import sqlite3
-import sys
-# zlib compression is used for engine version >=2.0
+import glob  # 新增：用于匹配分卷文件
 import zlib
 from io import BytesIO
 from struct import pack, unpack
+from urllib.parse import unquote  # 原生 Python 3 模块，替代原有的降级兼容
 
 from .readmdict import MDD, MDX
-
-# import chardet
 
 # LZO compression is used for engine version < 2.0
 try:
     import lzo
 except ImportError:
     lzo = None
-    #print("LZO compression support is not available")
-
-# 2x3 compatible
-if sys.hexversion >= 0x03000000:
-    unicode = str
 
 version = '1.1'
 
@@ -39,7 +32,7 @@ class IndexBuilder(object):
                  sql_index=True,
                  check=False):
         self._mdx_file = fname
-        self._mdd_file = ""
+        self._mdd_files = []  # 修改：用列表存储所有的 mdd 分卷文件
         self._encoding = ''
         self._stylesheet = {}
         self._title = ''
@@ -51,18 +44,28 @@ class IndexBuilder(object):
         assert (_file_extension == '.mdx')
         assert (os.path.isfile(fname))
         self._mdx_db = _filename + ".mdx.db"
+        
+        # 集中扫描主 mdd 和 分卷 mdd (如 .1.mdd, .2.mdd)
+        if os.path.isfile(_filename + '.mdd'):
+            self._mdd_files.append(_filename + ".mdd")
+        split_mdds = glob.glob(_filename + '.*.mdd')
+        self._mdd_files.extend(sorted(split_mdds))
+        
+        # 如果存在任何 mdd 文件，则设定共用的数据库路径
+        if self._mdd_files:
+            self._mdd_db = _filename + ".mdd.db"
+        else:
+            self._mdd_db = ""
+
         # make index anyway
         if force_rebuild:
             self._make_mdx_index(self._mdx_db)
-            if os.path.isfile(_filename + '.mdd'):
-                self._mdd_file = _filename + ".mdd"
-                self._mdd_db = _filename + ".mdd.db"
+            if self._mdd_files:
                 self._make_mdd_index(self._mdd_db)
 
         if os.path.isfile(self._mdx_db):
             #read from META table
             conn = sqlite3.connect(self._mdx_db)
-            #cursor = conn.execute("SELECT * FROM META")
             cursor = conn.execute("SELECT * FROM META WHERE key = \"version\"")
             #判断有无版本号
             for cc in cursor:
@@ -73,9 +76,7 @@ class IndexBuilder(object):
                 conn.close()
                 self._make_mdx_index(self._mdx_db)
                 print("mdx.db rebuilt!")
-                if os.path.isfile(_filename + '.mdd'):
-                    self._mdd_file = _filename + ".mdd"
-                    self._mdd_db = _filename + ".mdd.db"
+                if self._mdd_files:
                     self._make_mdd_index(self._mdd_db)
                     print("mdd.db rebuilt!")
                 return None
@@ -97,37 +98,32 @@ class IndexBuilder(object):
             for cc in cursor:
                 self._description = cc[1]
 
-            #for cc in cursor:
-            #    if cc[0] == 'encoding':
-            #        self._encoding = cc[1]
-            #        continue
-            #    if cc[0] == 'stylesheet':
-            #        self._stylesheet = json.loads(cc[1])
-            #        continue
-            #    if cc[0] == 'title':
-            #        self._title = cc[1]
-            #        continue
-            #    if cc[0] == 'title':
-            #        self._description = cc[1]
         else:
             self._make_mdx_index(self._mdx_db)
 
-        if os.path.isfile(_filename + ".mdd"):
-            self._mdd_file = _filename + ".mdd"
-            self._mdd_db = _filename + ".mdd.db"
+        if self._mdd_files:
             if not os.path.isfile(self._mdd_db):
                 self._make_mdd_index(self._mdd_db)
+            else:
+                # 【修复核心1】：检查旧数据库是否需要强制重建（是否缺少 mdd_file 字段）
+                try:
+                    conn = sqlite3.connect(self._mdd_db)
+                    cursor = conn.execute("PRAGMA table_info(MDX_INDEX)")
+                    cols = [c[1] for c in cursor]
+                    conn.close()
+                    if 'mdd_file' not in cols:
+                        self._make_mdd_index(self._mdd_db)
+                except Exception:
+                    self._make_mdd_index(self._mdd_db)
         pass
 
     def _replace_stylesheet(self, txt):
         # substitute stylesheet definition
         encoding = 'utf-8'
         if isinstance(txt, bytes):
-            # encode_type = chardet.detect(txt)
-            # encoding = encode_type['encoding']
             txt = txt.decode(encoding)
-        txt_list = re.split('`\d+`', txt)
-        txt_tag = re.findall('`\d+`', txt)
+        txt_list = re.split(r'`\d+`', txt)
+        txt_tag = re.findall(r'`\d+`', txt)
         txt_styled = txt_list[0]
         for j, p in enumerate(txt_list[1:]):
             style = self._stylesheet[txt_tag[j][1:-1]]
@@ -172,12 +168,6 @@ class IndexBuilder(object):
                 value text
                 )''')
 
-        #for k,v in meta:
-        #    c.execute(
-        #    'INSERT INTO META VALUES (?,?)',
-        #    (k, v)
-        #    )
-
         c.executemany('INSERT INTO META VALUES (?,?)',
                       [('encoding', meta['encoding']),
                        ('stylesheet', meta['stylesheet']),
@@ -201,11 +191,10 @@ class IndexBuilder(object):
     def _make_mdd_index(self, db_name):
         if os.path.exists(db_name):
             os.remove(db_name)
-        mdd = MDD(self._mdd_file)
-        self._mdd_db = db_name
-        index_list = mdd.get_index(check_block=self._check)
+            
         conn = sqlite3.connect(db_name)
         c = conn.cursor()
+        # 修改：新增 mdd_file 字段
         c.execute(''' CREATE TABLE MDX_INDEX
                (key_text text not null unique,
                 file_pos integer,
@@ -214,16 +203,25 @@ class IndexBuilder(object):
                 record_block_type integer,
                 record_start integer,
                 record_end integer,
-                offset integer
+                offset integer,
+                mdd_file text
                 )''')
 
-        tuple_list = [(item['key_text'], item['file_pos'],
-                       item['compressed_size'], item['decompressed_size'],
-                       item['record_block_type'], item['record_start'],
-                       item['record_end'], item['offset'])
-                      for item in index_list]
-        c.executemany('INSERT INTO MDX_INDEX VALUES (?,?,?,?,?,?,?,?)',
-                      tuple_list)
+        # 循环遍历所有收集到的 mdd 文件
+        for mdd_file in self._mdd_files:
+            mdd = MDD(mdd_file)
+            index_list = mdd.get_index(check_block=self._check)
+            
+            tuple_list = [(item['key_text'], item['file_pos'],
+                           item['compressed_size'], item['decompressed_size'],
+                           item['record_block_type'], item['record_start'],
+                           item['record_end'], item['offset'], mdd_file)
+                          for item in index_list]
+            
+            # 使用 INSERT OR IGNORE 避免分卷间同名文件导致主键冲突崩溃
+            c.executemany('INSERT OR IGNORE INTO MDX_INDEX VALUES (?,?,?,?,?,?,?,?,?)',
+                          tuple_list)
+                          
         if self._sql_index:
             c.execute('''
                 CREATE UNIQUE INDEX key_index ON MDX_INDEX (key_text)
@@ -239,7 +237,6 @@ class IndexBuilder(object):
         record_block_type = record_block_compressed[:4]
         record_block_type = index['record_block_type']
         decompressed_size = index['decompressed_size']
-        #adler32 = unpack('>I', record_block_compressed[4:8])[0]
         if record_block_type == 0:
             _record_block = record_block_compressed[8:]
             # lzo compression
@@ -276,14 +273,14 @@ class IndexBuilder(object):
     @staticmethod
     def lookup_indexes(db, keyword, ignorecase=None):
         indexes = []
+        # 【修复】：使用参数化查询（?），彻底防止由于包含引号等特殊字符导致的 SQL 崩溃或注入漏洞
         if ignorecase:
-            sql = 'SELECT * FROM MDX_INDEX WHERE lower(key_text) = lower("{}")'.format(
-                keyword)
+            sql = 'SELECT * FROM MDX_INDEX WHERE lower(key_text) = lower(?)'
         else:
-            sql = 'SELECT * FROM MDX_INDEX WHERE key_text = "{}"'.format(
-                keyword)
+            sql = 'SELECT * FROM MDX_INDEX WHERE key_text = ?'
+            
         with sqlite3.connect(db) as conn:
-            cursor = conn.execute(sql)
+            cursor = conn.execute(sql, (keyword,))
             for result in cursor:
                 index = {}
                 index['file_pos'] = result[1]
@@ -293,6 +290,9 @@ class IndexBuilder(object):
                 index['record_start'] = result[5]
                 index['record_end'] = result[6]
                 index['offset'] = result[7]
+                
+                if len(result) > 8:
+                    index['mdd_file'] = result[8]
                 indexes.append(index)
         return indexes
 
@@ -307,42 +307,50 @@ class IndexBuilder(object):
 
     def mdd_lookup(self, keyword, ignorecase=None):
         lookup_result_list = []
+        
         indexes = self.lookup_indexes(self._mdd_db, keyword, ignorecase)
-        with open(self._mdd_file, 'rb') as mdd_file:
-            for index in indexes:
-                lookup_result_list.append(
-                    self.get_mdd_by_index(mdd_file, index))
+
+        for index in indexes:
+            mdd_file_path = index.get('mdd_file')
+            
+            # 【修复核心3】：极早期数据库容错，若为空则强制使用第一个 mdd
+            if not mdd_file_path and self._mdd_files:
+                mdd_file_path = self._mdd_files[0]
+                
+            if mdd_file_path and os.path.isfile(mdd_file_path):
+                with open(mdd_file_path, 'rb') as mdd_file:
+                    lookup_result_list.append(
+                        self.get_mdd_by_index(mdd_file, index))
+                        
         return lookup_result_list
 
     @staticmethod
     def get_keys(db, query=''):
         if not db:
             return []
+            
+        # 【修复】：使用参数化查询（?），防止 SQL 注入或语法错误
         if query:
             if '*' in query:
                 query = query.replace('*', '%')
             else:
                 query = query + '%'
-            sql = 'SELECT key_text FROM MDX_INDEX WHERE key_text LIKE \"' + query + '\"'
+            sql = 'SELECT key_text FROM MDX_INDEX WHERE key_text LIKE ?'
+            
+            with sqlite3.connect(db) as conn:
+                cursor = conn.execute(sql, (query,))
+                keys = [item[0] for item in cursor]
+                return keys
         else:
             sql = 'SELECT key_text FROM MDX_INDEX'
-        with sqlite3.connect(db) as conn:
-            cursor = conn.execute(sql)
-            keys = [item[0] for item in cursor]
-            return keys
+            with sqlite3.connect(db) as conn:
+                cursor = conn.execute(sql)
+                keys = [item[0] for item in cursor]
+                return keys
 
     def get_mdd_keys(self, query=''):
-        return self.get_keys(self._mdd_db, query)
+        # 【修复】：已在头部引入 unquote，移除了这里针对 Python 2 的 try...except 降级判断
+        return self.get_keys(self._mdd_db, unquote(query))
 
     def get_mdx_keys(self, query=''):
         return self.get_keys(self._mdx_db, query)
-
-
-# mdx_builder = IndexBuilder("oald.mdx")
-# text = mdx_builder.mdx_lookup('dedication')
-# keys = mdx_builder.get_mdx_keys()
-# keys1 = mdx_builder.get_mdx_keys('abstrac')
-# keys2 = mdx_builder.get_mdx_keys('*tion')
-# for key in keys2:
-# text = mdx_builder.mdx_lookup(key)[0]
-# pass

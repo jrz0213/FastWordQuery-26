@@ -5,6 +5,12 @@ import random
 from ..base import *
 # from BeautifulSoup import BeautifulSoup
 # from bs4 import BeautifulSoup
+'''
+我用夸克网盘给你分享了「牛津高阶英汉双解词典第9例句发音版_V1.0.3c」，点击链接或复制整段内容，打开「夸克网盘APP」即可获取。
+/~8fc03ZubDw~:/
+链接：https://pan.quark.cn/s/bc0b2d27ee57?pwd=e3mJ
+提取码：e3mJ
+'''
 
 
 VOICE_PATTERN = r'<a href="sound:\/\/([\w\/]*\w*\.mp3)"><audio-%s>'
@@ -14,8 +20,9 @@ MAPPINGS = [
     ['us', [re.compile(VOICE_PATTERN % r'us')]]
 ]
 LANG_TO_REGEXPS = {lang: regexps for lang, regexps in MAPPINGS}
-DICT_PATH = u"/Users/brian/Documents/牛津高阶英汉双解词典第9例句发音版_V1.0.3c/牛津高阶英汉双解词典(第9版)_V1.0.3c.mdx" # u'E:\\BaiduYunDownload\\mdx\\L6mp3.mdx'
-
+DICT_PATH = r"" 
+# u'E:\\BaiduYunDownload\\mdx\\L6mp3.mdx'
+# r开头，windows下直接复制路径粘贴到引号内即可。
 
 @register([u'本地词典-牛津高阶9例句发音', u'牛津高阶9例句发音'])
 class oalecd9_mdx(MdxService):
