@@ -13,7 +13,7 @@ DICT_PATH = r''
 # u'E:\\BaiduYunDownload\\mdx\\L6mp3.mdx'
 # r开头，windows下直接复制路径粘贴到引号内即可。
 @register([u'本地词典-百词斩词典', u'MDX-Baicizhan'])
-class BaicizhanService(MdxService):
+class MDXBaicizhanService(MdxService):
     """
     百词斩词典专用提取脚本。
     继承自 MdxService，支持从本地 mdx/mdd 文件中提取文本及图片。

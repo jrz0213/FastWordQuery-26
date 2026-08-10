@@ -16,7 +16,7 @@ DICT_PATH = u'' # u'E:\\BaiduYunDownload\\mdx\\L6mp3.mdx'
 
 
 @register([u'本地词典-LDOCE6', u'MDX-LDOCE6'])
-class Ldoce6(MdxService):
+class MDXLdoce6(MdxService):
 
     def __init__(self):
         dict_path = DICT_PATH

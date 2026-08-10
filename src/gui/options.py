@@ -13,11 +13,19 @@ from ..utils import get_icon, get_model_byId
 from .base import WIDGET_SIZE, Dialog
 from .setting import SettingDialog
 
-# 引入我们刚刚提取出来的纯逻辑控制器
 from .options_controller import OptionsController
+# 🌟 引入我们新建的后台加载线程
+from .service_loader import ServiceLoaderThread
 
 __all__ = ['OptionsDialog']
 
+# ==========================================
+# 🌟 自定义无滚轮下拉框，防止页面滚动时误触切换
+# ==========================================
+class NoScrollComboBox(QComboBox):
+    """强制忽略鼠标滚轮事件的下拉框"""
+    def wheelEvent(self, event):
+        event.ignore()
 
 class OptionsDialog(Dialog):
     '''
@@ -25,7 +33,7 @@ class OptionsDialog(Dialog):
     setting query dictionary and fileds (GUI Only)
     '''
 
-    __slot__ = ['before_build', 'after_build']
+    __slot__ = ['after_build']
     _signal = pyqtSignal(str)
 
     _NULL_ICON = get_icon('null.png')
@@ -53,34 +61,39 @@ class OptionsDialog(Dialog):
                 target_height = min(max(3, len(self.current_model['flds']) + 1), 14) * WIDGET_SIZE.map_max_height + WIDGET_SIZE.dialog_height_margin
         self.resize(target_width, target_height)
 
-        # 加载提示
-        self.loading_label = QLabel("正在扫描和加载词典，请稍候...")
+        # 🌟 瞬间渲染的加载提示
+        self.loading_label = QLabel("正在极速并发扫描词典，请稍候...")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.loading_label.setStyleSheet("font-size: 16px; color: #666;")
+        self.loading_label.setStyleSheet("font-size: 16px; color: #666; font-weight: bold;")
         self.main_layout.addWidget(self.loading_label)
 
+        # 🌟 核心替换：直接启动子线程进行加载和信号通信
+        self.loader_thread = ServiceLoaderThread(self.controller)
+        self.loader_thread.finished_signal.connect(self._on_services_loaded)
+        self.loader_thread.start()
+
+        # 这个 Timer 仅用来监控底层 MDX 建库的状态，保留
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self.check_dict_status)
         self.poll_timer.start(2000)
 
-        QTimer.singleShot(50, lambda: self._before_build('before_build'))
-
-    def _before_build(self, s):
-        if s != 'before_build':
-            return
-            
-        # 【MVC 解耦】：将获取词典数据的杂活全部推给 Controller
-        self.dict_services = self.controller.load_services()
-        self._after_build('after_build')
-
-    def _after_build(self, s):
-        if s != 'after_build':
-            return
-            
+    # 🌟 接收到后台扫描完毕的信号，销毁遮罩并渲染主界面
+    def _on_services_loaded(self, dict_services):
+        self.dict_services = dict_services
+        
         if hasattr(self, 'loading_label') and self.loading_label:
             self.main_layout.removeWidget(self.loading_label)
             self.loading_label.deleteLater()
             self.loading_label = None
+
+        self._after_build('after_build')
+        
+        # 释放线程资源
+        self.loader_thread.deleteLater()
+
+    def _after_build(self, s):
+        if s != 'after_build':
+            return
 
         models_layout = QHBoxLayout()
         mdx_button = QPushButton(_('DICTS_FOLDERS'))
@@ -142,19 +155,16 @@ class OptionsDialog(Dialog):
             self.build_tabs_layout()
 
     def update_log_btn_text(self):
-        # 【MVC 解耦】：向 Controller 获取日志状态
         if self.controller.is_logging_enabled():
             self.log_toggle_btn.setText("日志:运行中")
         else:
             self.log_toggle_btn.setText("日志:已暂停")
 
     def toggle_logging(self):
-        # 【MVC 解耦】：向 Controller 下发切换指令
         self.controller.toggle_logging()
         self.update_log_btn_text()
 
     def check_dict_status(self):
-        # 【MVC 解耦】：向 Controller 索取状态
         status_changed, all_ready = self.controller.check_dict_status()
         
         if status_changed:
@@ -201,7 +211,6 @@ class OptionsDialog(Dialog):
         while len(self.tabs) > 0:
             self.removeTab(0, True)
             
-        # 【MVC 解耦】：向 Controller 请求 maps 数据
         conf = self.controller.get_maps(self.current_model['id'])
         maps_list = {'list': [conf], 'def': 0} if isinstance(conf, list) else conf
         
@@ -270,14 +279,12 @@ class OptionsDialog(Dialog):
                 'fields': tab.data,
                 'name': self.tab_widget.tabBar().tabText(i)
             })
-        # 【MVC 解耦】：交由 Controller 进行储存
         self.controller.save_config(self.current_model, maps_list)
 
 
 class TabContent(QScrollArea):
     """Options tab content"""
 
-    # 注入 controller 以便底层查询使用
     def __init__(self, model, conf, services, controller):
         super(TabContent, self).__init__()
         self._conf = conf
@@ -371,17 +378,22 @@ class TabContent(QScrollArea):
         word_check_btn.setChecked(word_checked)
         self.radio_group.addButton(word_check_btn)
         
-        dict_combo = QComboBox()
+        # 🌟 核心修改：使用自定义的无滚轮下拉框
+        dict_combo = NoScrollComboBox()
         dict_combo.setMinimumSize(WIDGET_SIZE.map_dict_width, 0)
         dict_combo.setMaximumSize(WIDGET_SIZE.map_dict_width, WIDGET_SIZE.map_max_height)
-        dict_combo.setFocusPolicy(Qt.FocusPolicy.TabFocus | Qt.FocusPolicy.ClickFocus | Qt.FocusPolicy.StrongFocus | Qt.FocusPolicy.WheelFocus)
+        # 去除了 WheelFocus 防止鼠标滚轮误触
+        dict_combo.setFocusPolicy(Qt.FocusPolicy.TabFocus | Qt.FocusPolicy.ClickFocus | Qt.FocusPolicy.StrongFocus)
         ignore = not self.fill_dict_combo_options(dict_combo, dict_unique, self._services) or ignore
         dict_unique = dict_combo.itemData(dict_combo.currentIndex())
         dict_combo.setEnabled(not word_checked and not ignore)
         
-        field_combo = QComboBox()
+        # 🌟 核心修改：字段下拉框也使用自定义无滚轮类
+        field_combo = NoScrollComboBox()
         field_combo.setMinimumSize(WIDGET_SIZE.map_field_width, 0)
         field_combo.setMaximumSize(WIDGET_SIZE.map_field_width, WIDGET_SIZE.map_max_height)
+        # 去除了 WheelFocus
+        field_combo.setFocusPolicy(Qt.FocusPolicy.TabFocus | Qt.FocusPolicy.ClickFocus | Qt.FocusPolicy.StrongFocus)
         field_combo.setEnabled(not word_checked and not ignore)
         self.fill_field_combo_options(field_combo, dict_name, dict_unique, dict_fld_name, dict_fld_ord)
 
@@ -510,7 +522,6 @@ class TabContent(QScrollArea):
             field_combo.setFocus(Qt.FocusReason.MouseFocusReason)
         else:
             unique = dict_combo_itemdata
-            # 【MVC 解耦】：向 Controller 请求目标词典支持的字段列表
             fields = self._controller.get_service_fields(unique)
             field_combo.setCurrentIndex(0)
             for i, each in enumerate(fields):

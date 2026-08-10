@@ -61,7 +61,13 @@ def set_logging_state(enable: bool):
     else:
         logger.setLevel(logging.WARNING)
         logger.addHandler(logging.NullHandler())
-
 # 首次导入时初始化执行一次
 if not logger.handlers:
-    set_logging_state(ENABLE_LOGGING)
+    try:
+        # 尝试从全局配置文件中读取上次保存的日志状态
+        from ..context import config
+        saved_state = getattr(config, 'enable_logging', False)
+        set_logging_state(saved_state)
+    except Exception:
+        # 万一在插件极早期启动阶段引入失败，降级使用默认值
+        set_logging_state(ENABLE_LOGGING)

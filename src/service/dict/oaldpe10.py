@@ -15,7 +15,7 @@ from ..base import *
 DICT_PATH = r''
 
 @register([u'本地词典-OALD10', u'MDX-OALD10'])
-class Oald10(MdxService):
+class MDXOald10(MdxService):
 
     def __init__(self):
         dict_path = DICT_PATH

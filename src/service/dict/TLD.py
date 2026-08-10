@@ -9,7 +9,7 @@ DICT_PATH = r""
 # r开头，windows下直接复制路径粘贴到引号内即可。
 
 @register([u'本地词典-The Little Dict', u'The Little Dict'])
-class TLD(MdxService):
+class MDXTLD(MdxService):
 
     def __init__(self):
         dict_path = DICT_PATH

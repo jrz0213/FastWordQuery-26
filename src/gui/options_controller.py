@@ -1,4 +1,5 @@
 # -*- coding:utf-8 -*-
+import concurrent.futures
 from ..context import config
 from ..service import service_manager, service_pool
 from ..service.base import LocalService
@@ -7,7 +8,6 @@ from ..utils.logger import logger
 class OptionsController:
     """
     选项面板的控制器 (Controller)
-    专门负责处理所有非 GUI 的底层业务逻辑：读写配置、扫描词典、查询状态等。
     """
     def __init__(self):
         self.dict_services = {'local': [], 'web': []}
@@ -19,12 +19,13 @@ class OptionsController:
         return config.get_maps(model_id)
 
     def load_services(self):
-        """扫描并加载所有激活的词典服务，生成供 UI 使用的数据结构"""
+        """多线程并发扫描并加载所有激活的词典服务"""
         dicts = config.dicts
         self.dict_services = {'local': [], 'web': []}
         local_count = 0
         web_count = 0
 
+        # 1. 本地词典加载 (纯内存映射读取，极速，无需多线程)
         for clazz in service_manager.local_services:
             if dicts.get(clazz.__unique__, dict()).get('enabled', True):
                 service = service_pool.get(clazz.__unique__)
@@ -40,22 +41,45 @@ class OptionsController:
                     local_count += 1
                 service_pool.put(service)
                 
-        for clazz in service_manager.web_services:
-            if dicts.get(clazz.__unique__, dict()).get('enabled', True):
+        # 2. 网络词典加载 (高延迟 I/O，使用多线程并发池)
+        web_classes_to_load = [
+            clazz for clazz in service_manager.web_services 
+            if dicts.get(clazz.__unique__, dict()).get('enabled', True)
+        ]
+        
+        def check_web_service(clazz):
+            try:
                 service = service_pool.get(clazz.__unique__)
+                res = None
                 if service and service.support:
-                    self.dict_services['web'].append({
+                    res = {
                         'title': service.title,
                         'unique': service.unique
-                    })
-                    web_count += 1
+                    }
                 service_pool.put(service)
-                
+                return res
+            except Exception as e:
+                logger.error(f"并发探测网络词典失败: [{clazz.__unique__}] | 错误: {e}")
+                return None
+
+        # 提取用户的配置并发数
+        max_workers = getattr(config, 'thread_number', 16) 
+        logger.info(f"启动网络词典并发探测 | 线程池大小: {max_workers} | 待探测数量: {len(web_classes_to_load)}")
+        
+        if web_classes_to_load:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(check_web_service, cls) for cls in web_classes_to_load]
+                for future in concurrent.futures.as_completed(futures):
+                    result = future.result()
+                    if result:
+                        self.dict_services['web'].append(result)
+                        web_count += 1
+
         logger.info(f"选项面板加载服务完毕 | 本地词典: {local_count} 个, 网络词典: {web_count} 个")
         return self.dict_services
 
     def check_dict_status(self):
-        """轮询检查后台排队建立的词典数据库状态"""
+        """轮询检查后台排队建立的词典数据库状态 (依然保留，用于监控后台建库进度)"""
         all_ready = True
         status_changed = False
 
@@ -72,7 +96,6 @@ class OptionsController:
         return status_changed, all_ready
 
     def get_service_fields(self, unique_id):
-        """根据词典唯一ID获取其支持的导出字段"""
         fields = []
         service = service_pool.get(unique_id)
         if service and service.support and service.fields:
@@ -81,27 +104,31 @@ class OptionsController:
         return fields
 
     def save_config(self, current_model, tabs_data):
-        """将前端 UI 拼装好的数据写入配置"""
-        if not current_model:
-            return
+        if not current_model: return
         data = dict()
         current_model_id = str(current_model['id'])
         data[current_model_id] = tabs_data
         data['last_model'] = current_model['id']
-        
         logger.info(f"保存查询选项配置 | 目标模型: [{current_model['name']}] | 包含标签页: {len(tabs_data['list'])} 个")
         config.update(data)
-
     def is_logging_enabled(self):
-        """获取当前日志系统状态"""
-        from ..utils import logger as logger_module
-        return getattr(logger_module, 'ENABLE_LOGGING', False)
+        """从全局配置中获取日志系统状态，默认关闭"""
+        from ..context import config
+        return getattr(config, 'enable_logging', False)
 
     def toggle_logging(self):
-        """切换日志系统开关"""
-        from ..utils import logger as logger_module
+        """切换日志系统开关，并永久保存到配置文件"""
+        from ..context import config
+        # 精准导入所需的函数，避免命名空间冲突
+        from ..utils.logger import set_logging_state
+        
         current_state = self.is_logging_enabled()
         new_state = not current_state
-        if hasattr(logger_module, 'set_logging_state'):
-            logger_module.set_logging_state(new_state)
+        
+        # 1. 保存到本地配置，永久生效（重启不丢失）
+        config.update({'enable_logging': new_state})
+        
+        # 2. 实时更新当前内存中的日志器状态
+        set_logging_state(new_state)
+            
         return new_state

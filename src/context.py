@@ -151,7 +151,19 @@ class Config(object):
         if len(tmpstr.split('{0}')) != 2:
             tmpstr = u'[sound:{0}]'
         return tmpstr
+    @property
+    def fuzzy_match(self):
+        """
+        媒体资源全局模糊匹配开关
+        """
+        return self.data.get('fuzzy_match', True)
 
+    @property
+    def enable_logging(self):
+        """
+        全局日志系统开关
+        """
+        return self.data.get('enable_logging', False)
 
 # config = Config(mw)
 # https://github.com/sth2018/FastWordQuery/issues/258
