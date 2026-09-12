@@ -36,7 +36,14 @@ shortcut = ('Ctrl+Alt' if is_mac else 'Ctrl') + '+Q'
 def start_here():
     from . import common as fastwq
     from .context import config
+    from .utils.logger import set_logging_state  # 引入底层日志控制接口
+    
     config.read()
+    
+    # 🌟 日志系统热启动：在配置加载后，强制同步一次本地保存的日志状态
+    saved_state = getattr(config, 'enable_logging', False)
+    set_logging_state(saved_state)
+    
     fastwq.my_shortcut = shortcut
     if not fastwq.have_setup:
         fastwq.have_setup = True
@@ -44,6 +51,5 @@ def start_here():
         fastwq.browser_menu()
         fastwq.context_menu()
         fastwq.customize_addcards()
-
 
 addHook("profileLoaded", start_here)

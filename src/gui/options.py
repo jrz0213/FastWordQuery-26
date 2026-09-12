@@ -14,14 +14,11 @@ from .base import WIDGET_SIZE, Dialog
 from .setting import SettingDialog
 
 from .options_controller import OptionsController
-# 🌟 引入我们新建的后台加载线程
 from .service_loader import ServiceLoaderThread
+from ..utils.logger import logger
 
 __all__ = ['OptionsDialog']
 
-# ==========================================
-# 🌟 自定义无滚轮下拉框，防止页面滚动时误触切换
-# ==========================================
 class NoScrollComboBox(QComboBox):
     """强制忽略鼠标滚轮事件的下拉框"""
     def wheelEvent(self, event):
@@ -42,7 +39,6 @@ class OptionsDialog(Dialog):
     def __init__(self, parent, title=u'Options', model_id=-1):
         super(OptionsDialog, self).__init__(parent, title)
         
-        # 实例化控制器
         self.controller = OptionsController()
         
         self.main_layout = QVBoxLayout()
@@ -52,7 +48,6 @@ class OptionsDialog(Dialog):
         self.current_model = None
         self.tabs = []
         
-        # 预设界面大小
         target_width = WIDGET_SIZE.dialog_width
         target_height = 400
         if self.model_id:
@@ -61,34 +56,53 @@ class OptionsDialog(Dialog):
                 target_height = min(max(3, len(self.current_model['flds']) + 1), 14) * WIDGET_SIZE.map_max_height + WIDGET_SIZE.dialog_height_margin
         self.resize(target_width, target_height)
 
-        # 🌟 瞬间渲染的加载提示
-        self.loading_label = QLabel("正在极速并发扫描词典，请稍候...")
+        self.loading_label = QLabel("正在扫描词典，请稍候...")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.loading_label.setStyleSheet("font-size: 16px; color: #666; font-weight: bold;")
         self.main_layout.addWidget(self.loading_label)
 
-        # 🌟 核心替换：直接启动子线程进行加载和信号通信
         self.loader_thread = ServiceLoaderThread(self.controller)
         self.loader_thread.finished_signal.connect(self._on_services_loaded)
         self.loader_thread.start()
 
-        # 这个 Timer 仅用来监控底层 MDX 建库的状态，保留
-        self.poll_timer = QTimer(self)
-        self.poll_timer.timeout.connect(self.check_dict_status)
-        self.poll_timer.start(2000)
+        if hasattr(mw, 'dict_signals'):
+            mw.dict_signals.status_changed.connect(self.check_dict_status)
 
-    # 🌟 接收到后台扫描完毕的信号，销毁遮罩并渲染主界面
     def _on_services_loaded(self, dict_services):
         self.dict_services = dict_services
         
+        import gc
+        from ..service.base import LocalService
+        from hashlib import md5
+        
+        # 🌟 建立 [UI Unique <-> 底层 MD5 Hash] 的智能映射表
+        unique_to_hash = {}
+        for obj in gc.get_objects():
+            if isinstance(obj, LocalService) and hasattr(obj, 'dict_path') and obj.dict_path:
+                path_key = obj.dict_path[:-4] if 'Stardict' in obj.__class__.__name__ else obj.dict_path
+                obj_hash = md5(str(path_key).encode('utf-8')).hexdigest()
+                unique_to_hash[obj.unique] = obj_hash
+                
+        for service in self.dict_services.get('local', []):
+            ui_unique = service.get('unique')
+            if ui_unique:
+                # 使用映射表找出它真实的底层 MD5 暗号
+                real_hash = unique_to_hash.get(ui_unique, ui_unique)
+                
+                real_status = LocalService._build_status.get(real_hash, "uninitialized")
+                has_builder = LocalService._mdx_builders.get(real_hash) is not None
+                
+                if has_builder or real_status == "ready":
+                    service['status'] = "ready"
+                elif real_status in ["checking", "building"]:
+                    service['status'] = real_status
+                    
         if hasattr(self, 'loading_label') and self.loading_label:
             self.main_layout.removeWidget(self.loading_label)
             self.loading_label.deleteLater()
             self.loading_label = None
 
         self._after_build('after_build')
-        
-        # 释放线程资源
         self.loader_thread.deleteLater()
 
     def _after_build(self, s):
@@ -164,15 +178,34 @@ class OptionsDialog(Dialog):
         self.controller.toggle_logging()
         self.update_log_btn_text()
 
-    def check_dict_status(self):
-        status_changed, all_ready = self.controller.check_dict_status()
-        
-        if status_changed:
-            for tab in self.tabs:
-                tab.refresh_dict_combos(self.dict_services)
+    def check_dict_status(self, hash_key=None, status=None):
+        if not hasattr(self, 'dict_services'):
+            return
 
-        if all_ready:
-            self.poll_timer.stop()
+        import gc
+        from ..service.base import LocalService
+        from hashlib import md5
+        
+        # 🌟 收到信号时，将底层的 MD5 反向翻译回 UI 的 Unique
+        target_unique = hash_key
+        for obj in gc.get_objects():
+            if isinstance(obj, LocalService) and hasattr(obj, 'dict_path') and obj.dict_path:
+                path_key = obj.dict_path[:-4] if 'Stardict' in obj.__class__.__name__ else obj.dict_path
+                obj_hash = md5(str(path_key).encode('utf-8')).hexdigest()
+                
+                if obj_hash == hash_key:
+                    target_unique = obj.unique
+                    logger.info(f"[UI 信号中转] 成功将底层 Hash [{hash_key}] 翻译为 UI Unique [{target_unique}]")
+                    break
+                    
+        if target_unique and status:
+            for service in self.dict_services.get('local', []):
+                if service.get('unique') == target_unique:
+                    service['status'] = status
+                    break
+                    
+        for tab in self.tabs:
+            tab.refresh_dict_combos(self.dict_services)
 
     def show_paras(self):
         dialog = SettingDialog(self, u'Setting')
@@ -192,8 +225,6 @@ class OptionsDialog(Dialog):
         show_about_dialog(self)
 
     def accept(self):
-        if hasattr(self, 'poll_timer') and self.poll_timer.isActive():
-            self.poll_timer.stop()
         self.save()
         super(OptionsDialog, self).accept()
 
@@ -368,7 +399,7 @@ class TabContent(QScrollArea):
         fld_name, fld_ord = kwargs.get('fld_name', ''), kwargs.get('fld_ord', '')
         dict_name, dict_unique, dict_fld_name, dict_fld_ord = (
             kwargs.get('dict_name', ''), kwargs.get('dict_unique', ''), 
-            kwargs.get('dict_fld_name', ''), kwargs.get('dcit_fld_ord', 0)
+            kwargs.get('dict_fld_name', ''), kwargs.get('dict_fld_ord', 0)
         )
         ignore, skip, cloze = kwargs.get('ignore', True), kwargs.get('skip_valued', True), kwargs.get('cloze_word', False)
 
@@ -378,21 +409,17 @@ class TabContent(QScrollArea):
         word_check_btn.setChecked(word_checked)
         self.radio_group.addButton(word_check_btn)
         
-        # 🌟 核心修改：使用自定义的无滚轮下拉框
         dict_combo = NoScrollComboBox()
         dict_combo.setMinimumSize(WIDGET_SIZE.map_dict_width, 0)
         dict_combo.setMaximumSize(WIDGET_SIZE.map_dict_width, WIDGET_SIZE.map_max_height)
-        # 去除了 WheelFocus 防止鼠标滚轮误触
         dict_combo.setFocusPolicy(Qt.FocusPolicy.TabFocus | Qt.FocusPolicy.ClickFocus | Qt.FocusPolicy.StrongFocus)
         ignore = not self.fill_dict_combo_options(dict_combo, dict_unique, self._services) or ignore
         dict_unique = dict_combo.itemData(dict_combo.currentIndex())
         dict_combo.setEnabled(not word_checked and not ignore)
         
-        # 🌟 核心修改：字段下拉框也使用自定义无滚轮类
         field_combo = NoScrollComboBox()
         field_combo.setMinimumSize(WIDGET_SIZE.map_field_width, 0)
         field_combo.setMaximumSize(WIDGET_SIZE.map_field_width, WIDGET_SIZE.map_max_height)
-        # 去除了 WheelFocus
         field_combo.setFocusPolicy(Qt.FocusPolicy.TabFocus | Qt.FocusPolicy.ClickFocus | Qt.FocusPolicy.StrongFocus)
         field_combo.setEnabled(not word_checked and not ignore)
         self.fill_field_combo_options(field_combo, dict_name, dict_unique, dict_fld_name, dict_fld_ord)
@@ -473,15 +500,20 @@ class TabContent(QScrollArea):
         
         for service in services['local']:
             status = service.get('status', 'uninitialized')
+            title = service.get('title', 'Unknown')
+            
             is_selectable = True
             
             if status == 'building':
-                display_title = "🔴 " + service['title'] + " (建库中)"
+                display_title = "🔴 " + title + " (建库中)"
+                is_selectable = False
+            elif status == 'checking':
+                display_title = "🟡 " + title + " (状态检测中)"
                 is_selectable = False
             elif status == 'ready':
-                display_title = "🟢 " + service['title']
+                display_title = "🟢 " + title
             else:
-                display_title = "⚪ " + service['title'] + " (未就绪)"
+                display_title = "⚪ " + title + " (未就绪)"
                 is_selectable = False
                 
             dict_combo.addItem(display_title, userData=service['unique'])

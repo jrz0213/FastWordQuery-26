@@ -159,10 +159,15 @@ class ServiceManager(object):
                             mdx_services.append(service)
                             logger.info(f"成功发现本地 MDX 词典: [{filename}]")
                             
-                        # Stardict    
+# Stardict    
                         elif StardictService.check(dict_path):
                             service = service_wrap(StardictService, dict_path)
-                            service.__unique__ = md5(str(dict_path).encode('utf-8')).hexdigest()
+                            # ❌ 原代码（未去后缀）：
+                            # service.__unique__ = md5(str(dict_path).encode('utf-8')).hexdigest()
+                            
+                            # ✅ 修改为（加上 [:-4] 去掉 .ifo 后缀）：
+                            service.__unique__ = md5(str(dict_path[:-4]).encode('utf-8')).hexdigest()
+                            
                             star_dict_services.append(service)
                             logger.info(f"成功发现本地 Stardict 词典: [{filename}]")
                             
@@ -172,3 +177,37 @@ class ServiceManager(object):
                         logger.error(f"解析本地词典文件异常: [{filename}] | 错误信息: {str(e)}\n【详细错误堆栈】:\n{error_details}")
                         
         return mdx_services, star_dict_services
+    
+    
+    # ==========================================
+# 🌟 新增：全局静默预热机制 (启动后3秒自动建库)
+# ==========================================
+from aqt import gui_hooks
+from aqt.qt import QTimer
+
+def _auto_prewarm_dictionaries():
+    logger.info("[全局预热] Anki 配置加载完毕，延迟 3 秒后开始静默扫描和建库准备...")
+    try:
+        # 预先扫描所有词典文件路径
+        mgr = ServiceManager()
+        
+        # 遍历本地词典，预先实例化它们以触发 base.py 中的 _get_builder 
+        # 从而把任务全部送进 _DictBuilderQueueThread 后台线程
+        count = 0
+        for svc_wrap in mgr.local_services:
+            try:
+                svc_wrap()  # 触发 MdxService/StardictService 的 __init__
+                count += 1
+            except Exception:
+                pass
+                
+        logger.info(f"[全局预热] 分发完成！共触发 {count} 个本地词典的后台状态检测。")
+    except Exception as e:
+        logger.error(f"[全局预热] 异常: {str(e)}")
+
+def _on_profile_loaded():
+    # 延迟 3000 毫秒（3秒）后执行静默预热，避开 Anki 刚启动时的卡顿高峰
+    QTimer.singleShot(3000, _auto_prewarm_dictionaries)
+
+# 将预热函数挂载到 Anki 的“配置打开完成”钩子上
+gui_hooks.profile_did_open.append(_on_profile_loaded)

@@ -1,5 +1,3 @@
-
-
 import inspect
 import os
 import random
@@ -19,7 +17,8 @@ import requests
 from bs4 import BeautifulSoup
 
 from aqt import mw
-from aqt.qt import QMutex, QThread
+# 🌟 修改点 1：引入 QObject 和 pyqtSignal 
+from aqt.qt import QMutex, QThread, QObject, pyqtSignal
 
 from ..context import config
 from ..lang import _cl
@@ -27,6 +26,13 @@ from ..libs import MdxBuilder, StardictBuilder
 from ..utils import MapDict, wrap_css
 from queue import Queue, Empty
 from ..utils.logger import logger
+
+# 🌟 修改点 2：定义全局信号对象挂载到 mw
+class _DictSignal(QObject):
+    status_changed = pyqtSignal(str, str)
+
+if not hasattr(mw, 'dict_signals'):
+    mw.dict_signals = _DictSignal()
 
 # 🌟 引入我们写的模糊匹配引擎
 from ..utils.fuzzy_match import process_fuzzy_media
@@ -359,16 +365,27 @@ class _DictBuilderQueueThread(QThread):
                 continue
             except Exception:
                 continue
+                
+            # 🌟 收到任务，更改状态为 building 并触发信号
+            self._mutex.lock()
+            self._build_status[hash_key] = "building"
+            self._mutex.unlock()
+            logger.info(f"后台线程开始建库解析 | 任务 Hash: [{hash_key}]")
+            mw.dict_signals.status_changed.emit(hash_key, "building")
+            
             try:
                 builder = func()
             except Exception as e:
                 logger.error(f"后台排队构建数据库失败: {str(e)}")
                 builder = None
             finally:
+                # 🌟 建库完成，更改状态为 ready 并触发信号
                 self._mutex.lock()
                 self._mdx_builders[hash_key] = builder
-                self._build_status[hash_key] = False
+                self._build_status[hash_key] = "ready"
                 self._mutex.unlock()
+                logger.info(f"后台建库解析完成 | 任务 Hash: [{hash_key}]")
+                mw.dict_signals.status_changed.emit(hash_key, "ready")
                 self._queue.task_done()
 
 class LocalService(Service):
@@ -378,8 +395,8 @@ class LocalService(Service):
         self.builder = None
         self.missed_css = set()
 
-    _mdx_builders = defaultdict(dict)
-    _build_status = defaultdict(bool)
+    _mdx_builders = {}
+    _build_status = {}  # 🌟 改为字典存储状态字符串
     _build_queue = Queue()
     _builder_thread = None
     _mutex_builder = QMutex()
@@ -389,9 +406,13 @@ class LocalService(Service):
         LocalService._mutex_builder.lock()
         hash_key = md5(str(key).encode('utf-8')).hexdigest()
         if not (func is None):
-            if not LocalService._mdx_builders.get(hash_key) and not LocalService._build_status.get(hash_key, False):
-                LocalService._build_status[hash_key] = True 
-                logger.info(f"本地词典准备就绪，加入后台解析队列 | 任务 Hash: [{hash_key}]")
+            status = LocalService._build_status.get(hash_key, "uninitialized")
+            if not LocalService._mdx_builders.get(hash_key) and status == "uninitialized":
+                # 🌟 状态转为 checking，打印日志并触发信号
+                LocalService._build_status[hash_key] = "checking" 
+                logger.info(f"本地词典准备就绪，状态检测中 | 任务 Hash: [{hash_key}]")
+                mw.dict_signals.status_changed.emit(hash_key, "checking")
+                
                 LocalService._build_queue.put((func, hash_key))
                 if LocalService._builder_thread is None or not LocalService._builder_thread.isRunning():
                     LocalService._builder_thread = _DictBuilderQueueThread(
@@ -407,10 +428,10 @@ class LocalService(Service):
     @classmethod
     def get_db_status(cls, dict_path):
         hash_key = md5(str(dict_path).encode('utf-8')).hexdigest()
-        is_building = cls._build_status.get(hash_key, False)
+        status = cls._build_status.get(hash_key, "uninitialized")
         has_builder = cls._mdx_builders.get(hash_key) is not None
-        if is_building: return "building"
-        if has_builder: return "ready"
+        if status in ["checking", "building"]: return status
+        if has_builder or status == "ready": return "ready"
         return "uninitialized"
 
     @property
@@ -457,7 +478,9 @@ class MdxService(LocalService):
         hash_key = md5(str(self.dict_path).encode('utf-8')).hexdigest()
         if not self.builder:
             self.builder = LocalService._mdx_builders.get(hash_key)
-        if LocalService._build_status.get(hash_key, False):
+            
+        status = LocalService._build_status.get(hash_key, "uninitialized")
+        if status in ["checking", "building"]:
             return QueryResult(result="<i>词典数据库正在后台建立中，请稍后再查...</i>")
         if not self.builder:
              return QueryResult(result="<i>词典初始化失败，请检查文件。</i>")
@@ -585,8 +608,7 @@ class MdxService(LocalService):
                     logger.info(f"[精确匹配失败] 资源缺失，移交模糊匹配队列: {original_name}")
                     fuzzy_targets.add(original_name)
             
-# 对精确查找失败的文件执行白名单模糊纠错
-# 对精确查找失败的文件执行白名单模糊纠错
+            # 对精确查找失败的文件执行白名单模糊纠错
             if fuzzy_targets:
                 replacement_map = process_fuzzy_media(
                     self.builder, 
@@ -746,8 +768,11 @@ class StardictService(LocalService):
     def active(self, fld_ord, word):
         hash_key = md5(str(self.dict_path[:-4]).encode('utf-8')).hexdigest()
         if not self.builder: self.builder = LocalService._mdx_builders.get(hash_key)
-        if LocalService._build_status.get(hash_key, False): return QueryResult(result="<i>词典数据库正在后台排队中...</i>")
+        
+        status = LocalService._build_status.get(hash_key, "uninitialized")
+        if status in ["checking", "building"]: return QueryResult(result="<i>词典数据库正在后台排队中...</i>")
         if not self.builder: return QueryResult(result="<i>词典初始化失败。</i>")
+        
         self.missed_css.clear()
         return super(LocalService, self).active(fld_ord, word)
 

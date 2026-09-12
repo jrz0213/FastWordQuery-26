@@ -13,7 +13,7 @@ class Bing_Images(WebService):
         super(Bing_Images, self).__init__()
 
     def _get_from_api(self):
-        url = u"http://cn.bing.com/images/search?q={}".format(self.quote_word)
+        url = u"http://cn.bing.com/images/search?q={}&qft=+filterui:photo-photo".format(self.quote_word)
         html = self.get_response(url, timeout=10)
         soup = parse_html(html)
         result = {
