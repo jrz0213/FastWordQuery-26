@@ -67,7 +67,6 @@ class OptionsDialog(Dialog):
 
         if hasattr(mw, 'dict_signals'):
             mw.dict_signals.status_changed.connect(self.check_dict_status)
-
     def _on_services_loaded(self, dict_services):
         self.dict_services = dict_services
         
@@ -78,10 +77,14 @@ class OptionsDialog(Dialog):
         # 🌟 建立 [UI Unique <-> 底层 MD5 Hash] 的智能映射表
         unique_to_hash = {}
         for obj in gc.get_objects():
-            if isinstance(obj, LocalService) and hasattr(obj, 'dict_path') and obj.dict_path:
-                path_key = obj.dict_path[:-4] if 'Stardict' in obj.__class__.__name__ else obj.dict_path
-                obj_hash = md5(str(path_key).encode('utf-8')).hexdigest()
-                unique_to_hash[obj.unique] = obj_hash
+            try:
+                # 增加 try...except 捕获内存中的死对象（弱引用）
+                if isinstance(obj, LocalService) and hasattr(obj, 'dict_path') and obj.dict_path:
+                    path_key = obj.dict_path[:-4] if 'Stardict' in obj.__class__.__name__ else obj.dict_path
+                    obj_hash = md5(str(path_key).encode('utf-8')).hexdigest()
+                    unique_to_hash[obj.unique] = obj_hash
+            except ReferenceError:
+                continue
                 
         for service in self.dict_services.get('local', []):
             ui_unique = service.get('unique')
@@ -104,6 +107,8 @@ class OptionsDialog(Dialog):
 
         self._after_build('after_build')
         self.loader_thread.deleteLater()
+
+
 
     def _after_build(self, s):
         if s != 'after_build':
@@ -185,18 +190,23 @@ class OptionsDialog(Dialog):
         import gc
         from ..service.base import LocalService
         from hashlib import md5
+        from ..utils.logger import logger
         
         # 🌟 收到信号时，将底层的 MD5 反向翻译回 UI 的 Unique
         target_unique = hash_key
         for obj in gc.get_objects():
-            if isinstance(obj, LocalService) and hasattr(obj, 'dict_path') and obj.dict_path:
-                path_key = obj.dict_path[:-4] if 'Stardict' in obj.__class__.__name__ else obj.dict_path
-                obj_hash = md5(str(path_key).encode('utf-8')).hexdigest()
-                
-                if obj_hash == hash_key:
-                    target_unique = obj.unique
-                    logger.info(f"[UI 信号中转] 成功将底层 Hash [{hash_key}] 翻译为 UI Unique [{target_unique}]")
-                    break
+            try:
+                # 增加 try...except 捕获内存中的死对象（弱引用）
+                if isinstance(obj, LocalService) and hasattr(obj, 'dict_path') and obj.dict_path:
+                    path_key = obj.dict_path[:-4] if 'Stardict' in obj.__class__.__name__ else obj.dict_path
+                    obj_hash = md5(str(path_key).encode('utf-8')).hexdigest()
+                    
+                    if obj_hash == hash_key:
+                        target_unique = obj.unique
+                        logger.info(f"[UI 信号中转] 成功将底层 Hash [{hash_key}] 翻译为 UI Unique [{target_unique}]")
+                        break
+            except ReferenceError:
+                continue
                     
         if target_unique and status:
             for service in self.dict_services.get('local', []):
@@ -206,7 +216,6 @@ class OptionsDialog(Dialog):
                     
         for tab in self.tabs:
             tab.refresh_dict_combos(self.dict_services)
-
     def show_paras(self):
         dialog = SettingDialog(self, u'Setting')
         dialog.exec()
