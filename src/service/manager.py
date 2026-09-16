@@ -25,6 +25,11 @@ class ServiceManager(object):
     def update_services(self):
         logger.info("开始更新并重新扫描所有词典服务...")
         
+        # ===================================================
+        # 🌟 核心修改：扫描外部目录，若发现同名 .py，则自动复制并覆盖内部
+        # ===================================================
+        self._sync_external_scripts()
+        
         # 优先扫描并加载自定义脚本服务，获取成功加载的脚本名称列表
         self.web_services, self.local_custom_services, self.loaded_scripts = self._get_services_from_files()
         
@@ -35,6 +40,31 @@ class ServiceManager(object):
         self.local_services = self.mdx_services + self.star_dict_services + self.local_custom_services
         
         logger.info(f"服务更新完成 | 共加载: 网络词典 {len(self.web_services)} 个, 本地词典 {len(self.local_services)} 个 (含自定义 {len(self.local_custom_services)} 个)")
+
+    def _sync_external_scripts(self):
+        """自动从外部词典目录同步 .py 到内部 dict 目录并进行覆盖"""
+        import shutil
+        service_path = u'dict'
+        internal_dict_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), service_path)
+        
+        if not os.path.exists(internal_dict_path):
+            os.makedirs(internal_dict_path)
+            
+        for ext_dir in config.dirs:
+            if not os.path.exists(ext_dir):
+                continue
+            for dirpath, _, filenames in os.walk(ext_dir):
+                for filename in filenames:
+                    if filename.lower().endswith('.py'):
+                        ext_py = os.path.join(dirpath, filename)
+                        int_py = os.path.join(internal_dict_path, filename)
+                        try:
+                            # 如果内部不存在该文件，或者外部文件的修改时间更新，则强制覆盖
+                            if not os.path.exists(int_py) or os.path.getmtime(ext_py) > os.path.getmtime(int_py):
+                                shutil.copy2(ext_py, int_py)
+                                logger.info(f"同步外部脚本并覆盖内部同名文件: [{filename}]")
+                        except Exception as e:
+                            logger.error(f"同步外部脚本失败: [{filename}] | 错误: {str(e)}")
 
     def get_service(self, unique):
         # webservice unique: class name
@@ -159,15 +189,10 @@ class ServiceManager(object):
                             mdx_services.append(service)
                             logger.info(f"成功发现本地 MDX 词典: [{filename}]")
                             
-# Stardict    
+                        # Stardict    
                         elif StardictService.check(dict_path):
                             service = service_wrap(StardictService, dict_path)
-                            # ❌ 原代码（未去后缀）：
-                            # service.__unique__ = md5(str(dict_path).encode('utf-8')).hexdigest()
-                            
-                            # ✅ 修改为（加上 [:-4] 去掉 .ifo 后缀）：
                             service.__unique__ = md5(str(dict_path[:-4]).encode('utf-8')).hexdigest()
-                            
                             star_dict_services.append(service)
                             logger.info(f"成功发现本地 Stardict 词典: [{filename}]")
                             
@@ -179,7 +204,7 @@ class ServiceManager(object):
         return mdx_services, star_dict_services
     
     
-    # ==========================================
+# ==========================================
 # 🌟 新增：全局静默预热机制 (启动后3秒自动建库)
 # ==========================================
 from aqt import gui_hooks
@@ -206,8 +231,8 @@ def _auto_prewarm_dictionaries():
         logger.error(f"[全局预热] 异常: {str(e)}")
 
 def _on_profile_loaded():
-    # 延迟 3000 毫秒（3秒）后执行静默预热，避开 Anki 刚启动时的卡顿高峰
-    QTimer.singleShot(3000, _auto_prewarm_dictionaries)
+    # 延迟 10000 毫秒后执行静默预热，避开 Anki 刚启动时的卡顿高峰
+    QTimer.singleShot(10000, _auto_prewarm_dictionaries)
 
 # 将预热函数挂载到 Anki 的“配置打开完成”钩子上
 gui_hooks.profile_did_open.append(_on_profile_loaded)

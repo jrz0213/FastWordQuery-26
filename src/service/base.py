@@ -661,18 +661,21 @@ class MdxService(LocalService):
         
         self.save_media_files(media_files_set)
         
-        # CSS 沙盒包裹处理
+        # CSS 沙盒包裹处理与覆盖逻辑
         for f in mcss:
             basename = os.path.basename(f.replace('\\', os.path.sep))
             if not basename: continue
             
             safe_css_name = sanitize_to_safe_encoding(basename)
             cssfile = u'_{}'.format(safe_css_name)
-            if not os.path.exists(cssfile):
-                css_src = os.path.join(os.path.dirname(self.dict_path), basename) # 原始寻找时仍用旧名
-                if os.path.exists(css_src) and os.path.isfile(css_src):
-                    shutil.copy(css_src, cssfile)
-                else:
+            
+            css_src = os.path.join(os.path.dirname(self.dict_path), basename) # 原始寻找时仍用旧名
+            if os.path.exists(css_src) and os.path.isfile(css_src):
+                # 🌟 核心修改：如果外部存在 CSS 文件且有更新，则强制覆盖内部文件
+                if not os.path.exists(cssfile) or os.path.getmtime(css_src) > os.path.getmtime(cssfile):
+                    shutil.copy2(css_src, cssfile)
+            else:
+                if not os.path.exists(cssfile):
                     self.missed_css.add(cssfile[1:])
                     
             new_css_file, wrap_class_name = wrap_css(cssfile)
@@ -697,15 +700,18 @@ class MdxService(LocalService):
             else:
                 savepath = '_' + safe_base
                 
-        if os.path.exists(savepath):
-            return savepath
-            
         try:
             src_fn = os.path.join(os.path.dirname(self.dict_path), basename)
             if os.path.exists(src_fn) and os.path.isfile(src_fn):
-                shutil.copy(src_fn, savepath)
+                # 🌟 核心修改：如果是提取外部文件（如与 mdx 同级的图片/js），同名且外部有更新时覆盖
+                if not os.path.exists(savepath) or os.path.getmtime(src_fn) > os.path.getmtime(savepath):
+                    shutil.copy2(src_fn, savepath)
                 return savepath
             else:
+                # 🌟 如果从 mdd 解压提取，已存在则直接返回以节省 I/O 性能
+                if os.path.exists(savepath):
+                    return savepath
+                    
                 ignorecase = config.ignore_mdx_wordcase and (
                         filepath_in_mdx != filepath_in_mdx.lower() or filepath_in_mdx != filepath_in_mdx.upper())
                 bytes_list = self.builder.mdd_lookup(filepath_in_mdx, ignorecase=ignorecase)
@@ -717,7 +723,6 @@ class MdxService(LocalService):
             logger.error(f"[资源抽取中断] 操作键名: [{filepath_in_mdx}] | Trace: {str(e)}")
             pass
         return ''
-
     def save_media_files(self, data):
         diff = data.difference(self.media_cache['files'])
         self.media_cache['files'].update(diff)
